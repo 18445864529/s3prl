@@ -87,6 +87,11 @@ class Solver(BaseSolver):
         self.lr_scheduler = self.optimizer.lr_scheduler
         self.verbose(self.optimizer.create_msg())
 
+        # Setup teacher forcing scheduler
+        def get_tf_scheduler(tf_start=1, tf_end=1, tf_step=1, tf_step_start=0, **kwargs):
+            return lambda step: max(tf_end,tf_start-(tf_start-tf_end)*(step-tf_step_start)/tf_step if step >= tf_step_start else 1)
+        self.tf_rate = get_tf_scheduler(**self.config['hparas'])
+
         # Enable AMP if needed
         self.enable_apex()
         
@@ -107,7 +112,8 @@ class Solver(BaseSolver):
             
             for data in self.tr_set:
                 # Pre-step : update tf_rate/lr_rate and do zero_grad
-                tf_rate = self.optimizer.pre_step(self.step)
+                self.optimizer.pre_step(self.step)
+                tf_rate = self.tf_rate(self.step)
                 total_loss = 0
                 
                 # Fetch data
