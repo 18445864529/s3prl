@@ -11,6 +11,7 @@ from src.util import human_format, cal_er, feat_to_fig, LabelSmoothingLoss
 from src.audio import Delta, Postprocess, Augment
 
 EMPTY_CACHE_STEP = 100
+STOP_EPOCH = 10
 
 class Solver(BaseSolver):
     ''' Solver for training'''
@@ -19,6 +20,9 @@ class Solver(BaseSolver):
 
         self.val_mode = self.config['hparas']['val_mode'].lower()
         self.WER = 'per' if self.val_mode == 'per' else 'wer'
+
+        '''early stopping for ctc '''
+        self.early_stoping = self.config['hparas']['early_stopping']
 
     def fetch_data(self, data, train=False):
         ''' Move data to device and compute text seq. length'''
@@ -95,11 +99,6 @@ class Solver(BaseSolver):
         
         self.n_epochs = 0
         self.timer.set()
-        '''early stopping for ctc '''
-        self.early_stoping = self.config['hparas']['early_stopping']
-        stop_epoch = 10
-        batch_size = self.config['data']['corpus']['batch_size']
-        stop_step = len(self.tr_set)*stop_epoch//batch_size
         
 
 
@@ -113,6 +112,7 @@ class Solver(BaseSolver):
                 
                 # Fetch data
                 feat, feat_len, txt, txt_len = self.fetch_data(data, train=True)
+                batch_size = len(feat)
             
                 self.timer.cnt('rd')
                 # Forward model
@@ -125,6 +125,7 @@ class Solver(BaseSolver):
 
                 ''' early stopping ctc'''
                 if self.early_stoping:
+                    stop_step = len(self.tr_set) * STOP_EPOCH // batch_size
                     if self.step > stop_step:
                         ctc_output = None
                         self.model.ctc_weight = 0
