@@ -162,6 +162,19 @@ class Solver(BaseSolver):
             #     self.write_log('spec_train',feat_to_fig(feat[0].transpose(0,1).cpu().detach(), spec=True))
             #del total_loss
 
+        if self.lr_scheduler == None:
+            lr = self.optimizer.opt.param_groups[0]['lr']
+            
+            if step == 1:
+                print('[INFO]    using lr schedular defined by Daniel, init lr = ', lr)
+
+            if step >99999 and step%2000==0:
+                lr = lr*0.85
+                for param_group in self.optimizer.opt.param_groups:
+                    param_group['lr'] = lr
+                print('[INFO]     at step:', step)
+                print('[INFO]   lr reduce to', lr)
+
         return total_loss
         
 
@@ -205,20 +218,6 @@ class Solver(BaseSolver):
                     print('Have finished epoch: ', self.n_epochs)
                     self.n_epochs +=1
                     
-                if self.lr_scheduler == None:
-                    lr = self.optimizer.opt.param_groups[0]['lr']
-                    
-                    if self.step == 1:
-                        print('[INFO]    using lr schedular defined by Daniel, init lr = ', lr)
-
-                    if self.step >99999 and self.step%2000==0:
-                        lr = lr*0.85
-                        for param_group in self.optimizer.opt.param_groups:
-                            param_group['lr'] = lr
-                        print('[INFO]     at step:', self.step )
-                        print('[INFO]   lr reduce to', lr)
-
-
                     #self.lr_scheduler.step(total_loss)
                 # End of step
                 # if self.step % EMPTY_CACHE_STEP == 0:
