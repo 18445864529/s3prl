@@ -24,17 +24,6 @@ class Solver(BaseSolver):
         '''early stopping for ctc '''
         self.early_stoping = self.config['hparas']['early_stopping']
 
-    def fetch_data(self, data, train=False):
-        ''' Move data to device and compute text seq. length'''
-        # feat: B x T x D
-        _, feat, feat_len, txt = data
-        feat = feat.to(self.device)
-        feat_len = feat_len.to(self.device)
-        txt = txt.to(self.device)
-        txt_len = torch.sum(txt!=0,dim=-1)
-        
-        return feat, feat_len, txt, txt_len
-
     def load_data(self):
         ''' Load data for training/validation, store tokenizer and input/output shape'''
         self.tr_set, self.dv_set, self.feat_dim, self.vocab_size, self.tokenizer, msg = \
