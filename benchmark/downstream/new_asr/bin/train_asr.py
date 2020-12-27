@@ -98,90 +98,101 @@ class Solver(BaseSolver):
         # Automatically load pre-trained model if self.paras.load is given
         self.load_ckpt()
 
+    def forward_train(self, feat, feat_len, txt):
+        feat_len = feat_len.to(feat.device)
+        txt = txt.to(feat.device)
+        txt_len = torch.sum(txt!=0,dim=-1)
+
+        batch_size = len(feat)
+        tf_rate = self.tf_rate(self.step)
+        total_loss = 0
+
+        self.timer.cnt('rd')
+        # Forward model
+        # Note: txt should NOT start w/ <sos>
+        ctc_output, encode_len, att_output, att_align, dec_state = \
+            self.model( feat, feat_len, max(txt_len), tf_rate=tf_rate, teacher=txt)
+        # Clear not used objects
+        del att_align
+        del dec_state
+
+        ''' early stopping ctc'''
+        if self.early_stoping:
+            stop_step = len(self.tr_set) * STOP_EPOCH // batch_size
+            if self.step > stop_step:
+                ctc_output = None
+                self.model.ctc_weight = 0
+        #print(ctc_output.shape)
+        # Compute all objectives
+        if ctc_output is not None:
+            if self.paras.cudnn_ctc:
+                ctc_loss = self.ctc_loss(ctc_output.transpose(0,1),
+                                         txt.to_sparse().values().to(device='cpu',dtype=torch.int32),
+                                         [ctc_output.shape[1]]*len(ctc_output),
+                                         #[int(encode_len.max()) for _ in encode_len],
+                                         txt_len.cpu().tolist())
+            else:
+                ctc_loss = self.ctc_loss(ctc_output.transpose(0,1), txt, encode_len, txt_len)
+            total_loss += ctc_loss*self.model.ctc_weight
+            del encode_len
+
+        if att_output is not None:
+            #print(att_output.shape)
+            b,t,_ = att_output.shape
+            att_loss = self.seq_loss(att_output.view(b*t,-1),txt.view(-1))
+            # Sum each uttr and devide by length then mean over batch
+            # att_loss = torch.mean(torch.sum(att_loss.view(b,t),dim=-1)/torch.sum(txt!=0,dim=-1).float())
+            total_loss += att_loss*(1-self.model.ctc_weight)
+
+        self.timer.cnt('fw')
+
+        # Logger
+        step = self.step + 1
+        if (step==1) or (step%self.PROGRESS_STEP==0):
+            if att_output is not None:
+                self.write_log('loss',{'tr_att':att_loss})
+                self.write_log(self.WER,{'tr_att':cal_er(self.tokenizer,att_output,txt)})
+                self.write_log(   'cer',{'tr_att':cal_er(self.tokenizer,att_output,txt,mode='cer')})
+            if ctc_output is not None:
+                self.write_log('loss',{'tr_ctc':ctc_loss})
+                self.write_log(self.WER,{'tr_ctc':cal_er(self.tokenizer,ctc_output,txt,ctc=True)})
+                self.write_log(   'cer',{'tr_ctc':cal_er(self.tokenizer,ctc_output,txt,mode='cer',ctc=True)})
+                self.write_log('ctc_text_train',self.tokenizer.decode(ctc_output[0].argmax(dim=-1).tolist(),ignore_repeat=True))
+            # if self.step==1 or self.step % (self.PROGRESS_STEP * 5) == 0:
+            #     self.write_log('spec_train',feat_to_fig(feat[0].transpose(0,1).cpu().detach(), spec=True))
+            #del total_loss
+
+        return total_loss
+        
+
     def exec(self):
         ''' Training End-to-end ASR system '''
         self.verbose('Total training steps {}.'.format(human_format(self.max_step)))
         
         self.n_epochs = 0
         self.timer.set()
-        
-
 
         while self.step< self.max_step:
-            ctc_loss, att_loss = None, None
-            
             for data in self.tr_set:
+                _, feat, feat_len, txt = data
+                feat = feat.to(self.device)
+                batch_size = len(feat)
+
                 # Pre-step : update tf_rate/lr_rate and do zero_grad
                 self.optimizer.pre_step(self.step)
-                tf_rate = self.tf_rate(self.step)
-                total_loss = 0
-                
-                # Fetch data
-                feat, feat_len, txt, txt_len = self.fetch_data(data, train=True)
-                batch_size = len(feat)
             
-                self.timer.cnt('rd')
-                # Forward model
-                # Note: txt should NOT start w/ <sos>
-                ctc_output, encode_len, att_output, att_align, dec_state = \
-                    self.model( feat, feat_len, max(txt_len), tf_rate=tf_rate, teacher=txt)
-                # Clear not used objects
-                del att_align
-                del dec_state
-
-                ''' early stopping ctc'''
-                if self.early_stoping:
-                    stop_step = len(self.tr_set) * STOP_EPOCH // batch_size
-                    if self.step > stop_step:
-                        ctc_output = None
-                        self.model.ctc_weight = 0
-                #print(ctc_output.shape)
-                # Compute all objectives
-                if ctc_output is not None:
-                    if self.paras.cudnn_ctc:
-                        ctc_loss = self.ctc_loss(ctc_output.transpose(0,1), 
-                                                 txt.to_sparse().values().to(device='cpu',dtype=torch.int32),
-                                                 [ctc_output.shape[1]]*len(ctc_output),
-                                                 #[int(encode_len.max()) for _ in encode_len],
-                                                 txt_len.cpu().tolist())
-                    else:
-                        ctc_loss = self.ctc_loss(ctc_output.transpose(0,1), txt, encode_len, txt_len)
-                    total_loss += ctc_loss*self.model.ctc_weight
-                    del encode_len
-
-                if att_output is not None:
-                    #print(att_output.shape)
-                    b,t,_ = att_output.shape
-                    att_loss = self.seq_loss(att_output.view(b*t,-1),txt.view(-1))
-                    # Sum each uttr and devide by length then mean over batch
-                    # att_loss = torch.mean(torch.sum(att_loss.view(b,t),dim=-1)/torch.sum(txt!=0,dim=-1).float())
-                    total_loss += att_loss*(1-self.model.ctc_weight)
-
-                self.timer.cnt('fw')
+                # Forward
+                total_loss = self.forward_train(feat, feat_len, txt)
 
                 # Backprop
                 grad_norm = self.backward(total_loss)             
 
                 self.step+=1
-                
-                # Logger
-                if (self.step==1) or (self.step%self.PROGRESS_STEP==0):
-                    self.progress('Tr stat | Loss - {:.2f} | Grad. Norm - {:.2f} | {}'\
-                            .format(total_loss.cpu().item(),grad_norm,self.timer.show()))
-                    if att_output is not None:
-                        self.write_log('loss',{'tr_att':att_loss})
-                        self.write_log(self.WER,{'tr_att':cal_er(self.tokenizer,att_output,txt)})
-                        self.write_log(   'cer',{'tr_att':cal_er(self.tokenizer,att_output,txt,mode='cer')})
-                    if ctc_output is not None:
-                        self.write_log('loss',{'tr_ctc':ctc_loss})
-                        self.write_log(self.WER,{'tr_ctc':cal_er(self.tokenizer,ctc_output,txt,ctc=True)})
-                        self.write_log(   'cer',{'tr_ctc':cal_er(self.tokenizer,ctc_output,txt,mode='cer',ctc=True)})
-                        self.write_log('ctc_text_train',self.tokenizer.decode(ctc_output[0].argmax(dim=-1).tolist(),
-                                                                                                ignore_repeat=True))
-                    # if self.step==1 or self.step % (self.PROGRESS_STEP * 5) == 0:
-                    #     self.write_log('spec_train',feat_to_fig(feat[0].transpose(0,1).cpu().detach(), spec=True))
-                    #del total_loss
 
+                # Logging
+                if (self.step==1) or (self.step%self.PROGRESS_STEP==0):
+                    self.progress('Tr stat | Loss - {:.2f} | {}'\
+                        .format(total_loss.cpu().item(),self.timer.show()))
 
                 # Validation
                 if (self.step==1) or (self.step%self.valid_step == 0):
