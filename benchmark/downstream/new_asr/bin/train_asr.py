@@ -233,45 +233,60 @@ class Solver(BaseSolver):
             
         self.log.close()
         print('[INFO] Finished training after', human_format(self.max_step), 'steps.')
-        
-    def validate(self, _dv_set, _name):
-        # Eval mode
-        self.model.eval()
-        dev_wer = {'att':[],'ctc':[]}
-        dev_cer = {'att':[],'ctc':[]}
-        dev_er  = {'att':[],'ctc':[]}
 
-        for i,data in enumerate(_dv_set):
-            self.progress('Valid step - {}/{}'.format(i+1,len(_dv_set)))
-            # Fetch data
-            feat, feat_len, txt, txt_len = self.fetch_data(data)
+    def forward_validate(self, feat, feat_len, txt, global_step, batch_num, batch_id, _name):
+        feat_len = feat_len.to(feat.device)
+        txt = txt.to(feat.device)
+        txt_len = torch.sum(txt!=0,dim=-1)
+        batch_size = len(feat)
 
-            # Forward model
-            with torch.no_grad():
-                ctc_output, encode_len, att_output, att_align, dec_state = \
-                    self.model( feat, feat_len, int(max(txt_len)*self.DEV_STEP_RATIO))
+        if not hasattr(self, 'dev_wer'):
+            self.dev_wer = {'att':[],'ctc':[]}
+        if not hasattr(self, 'dev_cer'):
+            self.dev_cer = {'att':[],'ctc':[]}
+        if not hasattr(self, 'dev_er'):
+            self.dev_er  = {'att':[],'ctc':[]}
 
-            if att_output is not None:
-                dev_wer['att'].append(cal_er(self.tokenizer,att_output,txt,mode='wer'))
-                dev_cer['att'].append(cal_er(self.tokenizer,att_output,txt,mode='cer'))
-                dev_er['att'].append(cal_er(self.tokenizer,att_output,txt,mode=self.val_mode))
-            if ctc_output is not None:
-                dev_wer['ctc'].append(cal_er(self.tokenizer,ctc_output,txt,mode='wer',ctc=True))
-                dev_cer['ctc'].append(cal_er(self.tokenizer,ctc_output,txt,mode='cer',ctc=True))
-                dev_er['ctc'].append(cal_er(self.tokenizer,ctc_output,txt,mode=self.val_mode,ctc=True))
-            
-            # Show some example on tensorboard
-            if i == len(_dv_set)//2:
-                for i in range(min(len(txt),self.DEV_N_EXAMPLE)):
-                    if self.step==1:
-                        self.write_log('true_text_{}_{}'.format(_name, i),self.tokenizer.decode(txt[i].tolist()))
-                    if att_output is not None:
-                        self.write_log('att_align_{}_{}'.format(_name, i),feat_to_fig(att_align[i,0,:,:].cpu().detach()))
-                        self.write_log('att_text_{}_{}'.format(_name, i),self.tokenizer.decode(att_output[i].argmax(dim=-1).tolist()))
-                    if ctc_output is not None:
-                        self.write_log('ctc_text_{}_{}'.format(_name, i),self.tokenizer.decode(ctc_output[i].argmax(dim=-1).tolist(),
-                                                                                                       ignore_repeat=True))
-        
+        dev_wer = self.dev_wer
+        dev_cer = self.dev_cer
+        dev_er = self.dev_er
+
+
+        # Forward model
+        with torch.no_grad():
+            ctc_output, encode_len, att_output, att_align, dec_state = \
+                self.model( feat, feat_len, int(max(txt_len)*self.DEV_STEP_RATIO))
+
+        if att_output is not None:
+            dev_wer['att'].append(cal_er(self.tokenizer,att_output,txt,mode='wer'))
+            dev_cer['att'].append(cal_er(self.tokenizer,att_output,txt,mode='cer'))
+            dev_er['att'].append(cal_er(self.tokenizer,att_output,txt,mode=self.val_mode))
+        if ctc_output is not None:
+            dev_wer['ctc'].append(cal_er(self.tokenizer,ctc_output,txt,mode='wer',ctc=True))
+            dev_cer['ctc'].append(cal_er(self.tokenizer,ctc_output,txt,mode='cer',ctc=True))
+            dev_er['ctc'].append(cal_er(self.tokenizer,ctc_output,txt,mode=self.val_mode,ctc=True))
+
+        # Show some example on tensorboard
+        if batch_id == batch_num//2:
+            for i in range(min(len(txt),self.DEV_N_EXAMPLE)):
+                if self.step==1:
+                    self.write_log('true_text_{}_{}'.format(_name, i),self.tokenizer.decode(txt[i].tolist()))
+                if att_output is not None:
+                    self.write_log('att_align_{}_{}'.format(_name, i),feat_to_fig(att_align[i,0,:,:].cpu().detach()))
+                    self.write_log('att_text_{}_{}'.format(_name, i),self.tokenizer.decode(att_output[i].argmax(dim=-1).tolist()))
+                if ctc_output is not None:
+                    self.write_log('ctc_text_{}_{}'.format(_name, i),self.tokenizer.decode(ctc_output[i].argmax(dim=-1).tolist(),
+                                                                                                    ignore_repeat=True))
+
+    def log_records(self, _name):
+        assert hasattr(self, 'dev_wer')
+        assert hasattr(self, 'dev_cer')
+        assert hasattr(self, 'dev_er')
+
+        dev_wer = self.dev_wer
+        dev_cer = self.dev_cer
+        dev_er = self.dev_er
+
         # Ckpt if performance improves
         tasks = []
         if len(dev_er['att']) > 0:
@@ -292,6 +307,25 @@ class Solver(BaseSolver):
                                     self.val_mode,dev_er[task],_name)
             self.write_log(self.WER,{'dv_'+task+'_'+_name.lower():dev_wer[task]})
             self.write_log(   'cer',{'dv_'+task+'_'+_name.lower():dev_cer[task]})
+        
+        delattr(self, 'dev_wer')
+        delattr(self, 'dev_cer')
+        delattr(self, 'dev_er')
+
+    def validate(self, _dv_set, _name):
+        # Eval mode
+        self.model.eval()
+
+        batch_num = len(_dv_set)
+        for batch_id,data in enumerate(_dv_set):
+            self.progress('Valid step - {}/{}'.format(batch_id+1,batch_num))
+            _, feat, feat_len, txt = data
+            feat = feat.to(self.device)
+            batch_size = len(feat)
+
+            self.forward_validate(feat, feat_len, txt, self.step, batch_num, batch_id, _name)
+
+        self.log_records(_name)
 
         # Resume training
         self.model.train()
