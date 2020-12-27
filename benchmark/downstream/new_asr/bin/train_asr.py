@@ -83,9 +83,10 @@ class Solver(BaseSolver):
         self.ctc_loss = torch.nn.CTCLoss(blank=0, zero_infinity=False) # Note: zero_infinity=False is unstable?
 
         # Optimizer
-        self.optimizer = Optimizer(model_paras, **self.config['hparas'])
-        self.lr_scheduler = self.optimizer.lr_scheduler
-        self.verbose(self.optimizer.create_msg())
+        def get_optimizer(parameters, optimizer, lr, eps, weight_decay=0, amsgrad=False, **kwargs):
+            Opt = getattr(torch.optim, optimizer)
+            return Opt(parameters, lr=lr, eps=eps, weight_decay=weight_decay)
+        self.optimizer = get_optimizer(model_paras, **self.config['hparas'])
 
         # Setup teacher forcing scheduler
         def get_tf_scheduler(tf_start=1, tf_end=1, tf_step=1, tf_step_start=0, **kwargs):
@@ -162,18 +163,15 @@ class Solver(BaseSolver):
             #     self.write_log('spec_train',feat_to_fig(feat[0].transpose(0,1).cpu().detach(), spec=True))
             #del total_loss
 
-        if self.lr_scheduler == None:
-            lr = self.optimizer.opt.param_groups[0]['lr']
-            
-            if step == 1:
-                print('[INFO]    using lr schedular defined by Daniel, init lr = ', lr)
-
-            if step >99999 and step%2000==0:
-                lr = lr*0.85
-                for param_group in self.optimizer.opt.param_groups:
-                    param_group['lr'] = lr
-                print('[INFO]     at step:', step)
-                print('[INFO]   lr reduce to', lr)
+        lr = self.optimizer.param_groups[0]['lr']        
+        if step == 1:
+            print('[INFO]    using lr schedular defined by Daniel, init lr = ', lr)
+        if step >99999 and step%2000==0:
+            lr = lr*0.85
+            for param_group in self.optimizer.param_groups:
+                param_group['lr'] = lr
+            print('[INFO]     at step:', step)
+            print('[INFO]   lr reduce to', lr)
 
         return total_loss
         
@@ -191,8 +189,7 @@ class Solver(BaseSolver):
                 feat = feat.to(self.device)
                 batch_size = len(feat)
 
-                # Pre-step : update tf_rate/lr_rate and do zero_grad
-                self.optimizer.pre_step(self.step)
+                self.optimizer.zero_grad()
             
                 # Forward
                 total_loss = self.forward_train(feat, feat_len, txt, self.step)

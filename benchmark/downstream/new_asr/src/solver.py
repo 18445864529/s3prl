@@ -102,7 +102,7 @@ class BaseSolver():
             ### resume training
             if self.mode == 'train':
                 self.step = ckpt['global_step']
-                self.optimizer.load_opt_state_dict(ckpt['optimizer'])
+                self.optimizer.load_state_dict(ckpt['optimizer'])
                 self.verbose('Load ckpt from {}, restarting at step {}'.format(self.paras.load,self.step))
             else:
                 for k,v in ckpt.items():
@@ -160,7 +160,7 @@ class BaseSolver():
         ckpt_path = os.path.join(self.ckpdir, f_name)
         full_dict = {
             "model": self.model.state_dict(),
-            "optimizer": self.optimizer.get_opt_state_dict(),
+            "optimizer": self.optimizer.state_dict(),
             "global_step": self.step,
             metric: score
         }
@@ -181,7 +181,7 @@ class BaseSolver():
             from apex import amp
             self.amp_lib = amp
             self.verbose("AMP enabled (check https://github.com/NVIDIA/apex for more details).")
-            self.model, self.optimizer.opt = self.amp_lib.initialize(self.model, self.optimizer.opt, opt_level='O1')
+            self.model, self.optimizer = self.amp_lib.initialize(self.model, self.optimizer, opt_level='O1')
 
 
     # ----------------------------------- Abtract Methods ------------------------------------------ #
