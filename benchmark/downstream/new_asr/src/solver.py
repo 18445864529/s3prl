@@ -9,7 +9,7 @@ from torch.utils.tensorboard import SummaryWriter
 from src.option import default_hparas
 from src.util import human_format, Timer
 
-class BaseSolver():
+class BaseSolver(torch.nn.Module):
     ''' 
     Prototype Solver for all kinds of tasks
     Arguments
@@ -17,6 +17,8 @@ class BaseSolver():
         paras  - argparse outcome
     '''
     def __init__(self, config, paras, mode):
+        super(BaseSolver, self).__init__()
+
         # General Settings
         self.config = config
         self.paras = paras
