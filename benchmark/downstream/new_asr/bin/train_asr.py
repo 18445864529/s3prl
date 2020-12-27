@@ -98,13 +98,13 @@ class Solver(BaseSolver):
         # Automatically load pre-trained model if self.paras.load is given
         self.load_ckpt()
 
-    def forward_train(self, feat, feat_len, txt):
+    def forward_train(self, feat, feat_len, txt, global_step):
         feat_len = feat_len.to(feat.device)
         txt = txt.to(feat.device)
         txt_len = torch.sum(txt!=0,dim=-1)
 
         batch_size = len(feat)
-        tf_rate = self.tf_rate(self.step)
+        tf_rate = self.tf_rate(global_step)
         total_loss = 0
 
         self.timer.cnt('rd')
@@ -119,7 +119,7 @@ class Solver(BaseSolver):
         ''' early stopping ctc'''
         if self.early_stoping:
             stop_step = len(self.tr_set) * STOP_EPOCH // batch_size
-            if self.step > stop_step:
+            if global_step > stop_step:
                 ctc_output = None
                 self.model.ctc_weight = 0
         #print(ctc_output.shape)
@@ -147,7 +147,7 @@ class Solver(BaseSolver):
         self.timer.cnt('fw')
 
         # Logger
-        step = self.step + 1
+        step = global_step + 1
         if (step==1) or (step%self.PROGRESS_STEP==0):
             if att_output is not None:
                 self.write_log('loss',{'tr_att':att_loss})
@@ -195,7 +195,7 @@ class Solver(BaseSolver):
                 self.optimizer.pre_step(self.step)
             
                 # Forward
-                total_loss = self.forward_train(feat, feat_len, txt)
+                total_loss = self.forward_train(feat, feat_len, txt, self.step)
 
                 # Backprop
                 grad_norm = self.backward(total_loss)             
