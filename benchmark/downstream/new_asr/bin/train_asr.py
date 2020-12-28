@@ -167,16 +167,6 @@ class Solver(BaseSolver):
             #     self.write_log('spec_train',feat_to_fig(feat[0].transpose(0,1).cpu().detach(), spec=True))
             #del total_loss
 
-        lr = self.optimizer.param_groups[0]['lr']        
-        if self.step == 1:
-            print('[INFO]    using lr schedular defined by Daniel, init lr = ', lr)
-        if self.step >99999 and self.step%2000==0:
-            lr = lr*0.85
-            for param_group in self.optimizer.param_groups:
-                param_group['lr'] = lr
-            print('[INFO]     at step:', self.step)
-            print('[INFO]   lr reduce to', lr)
-
         return total_loss
         
 
@@ -225,8 +215,17 @@ class Solver(BaseSolver):
                 torch.cuda.empty_cache() # https://github.com/pytorch/pytorch/issues/13246#issuecomment-529185354
                 self.timer.set()
                 if self.step > self.max_step: break
-            
-            
+
+                # learning rate scheduling
+                lr = self.optimizer.param_groups[0]['lr']        
+                if self.step == 1:
+                    print('[INFO]    using lr schedular defined by Daniel, init lr = ', lr)
+                if self.step >99999 and self.step%2000==0:
+                    lr = lr*0.85
+                    for param_group in self.optimizer.param_groups:
+                        param_group['lr'] = lr
+                    print('[INFO]     at step:', self.step)
+                    print('[INFO]   lr reduce to', lr)
             
             #update lr_scheduler
             
