@@ -243,7 +243,6 @@ def get_polynomial_decay_schedule_with_warmup(
 
 def get_asr_schedule(optimizer, num_training_steps, num_fast_steps=49, reduce_every_steps=10, reduce_ratio=0.85, last_epoch=-1):
     def lr_lambda(current_step: int):
-        print(f'[LambdaLR] - {optimizer.param_groups[0]["lr"]}')
         if current_step < num_fast_steps:
             return 1.0
         reduce_num = (current_step - num_fast_steps) // reduce_every_steps + 1
