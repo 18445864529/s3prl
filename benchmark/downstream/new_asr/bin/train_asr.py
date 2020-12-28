@@ -6,7 +6,7 @@ from src.solver import BaseSolver
 
 from src.asr import ASR
 from src.optim import Optimizer
-from src.data import load_dataset
+from src.data import load_dataset, load_wav_dataset
 from src.util import human_format, cal_er, feat_to_fig, LabelSmoothingLoss
 from src.audio import Delta, Postprocess, Augment
 
@@ -15,8 +15,9 @@ STOP_EPOCH = 10
 
 class Solver(BaseSolver):
     ''' Solver for training'''
-    def __init__(self,config,paras,mode):
+    def __init__(self,config,paras,mode,feat_dim=None):
         super().__init__(config,paras,mode)
+        self.feat_dim = feat_dim
 
         self.val_mode = self.config['hparas']['val_mode'].lower()
         self.WER = 'per' if self.val_mode == 'per' else 'wer'
@@ -24,13 +25,7 @@ class Solver(BaseSolver):
         '''early stopping for ctc '''
         self.early_stoping = self.config['hparas']['early_stopping']
 
-    def load_data(self):
-        ''' Load data for training/validation, store tokenizer and input/output shape'''
-        self.tr_set, self.dv_set, self.feat_dim, self.vocab_size, self.tokenizer, msg = \
-                         load_dataset(self.paras.njobs, self.paras.gpu, self.paras.pin_memory, 
-                                      False, **self.config['data'])
-        self.verbose(msg)
-
+    def _preprocessing(self):
         # Dev set sames
         self.dv_names = []
         if type(self.dv_set) is list:
@@ -48,6 +43,22 @@ class Solver(BaseSolver):
             for name in self.dv_names:
                 self.best_wer['att'][name] = 3.0
                 self.best_wer['ctc'][name] = 3.0
+
+    def load_data(self):
+        ''' Load data for training/validation, store tokenizer and input/output shape'''
+        self.tr_set, self.dv_set, self.feat_dim, self.vocab_size, self.tokenizer, msg = \
+                         load_dataset(self.paras.njobs, self.paras.gpu, self.paras.pin_memory, 
+                                      False, **self.config['data'])
+        self.verbose(msg)
+        self._preprocessing()
+    
+    def load_wav(self):
+        ''' Load raw waveform for training/validation, store tokenizer and input/output shape'''
+        self.tr_set, self.dv_set, self.vocab_size, self.tokenizer, msg = \
+                          load_wav_dataset(self.paras.njobs, self.paras.gpu, self.paras.pin_memory, 
+                                           False, **self.config['data'])
+        self.verbose(msg)
+        self._preprocessing()
 
     def set_model(self):
         ''' Setup ASR model and optimizer '''
@@ -92,9 +103,10 @@ class Solver(BaseSolver):
         feat_len = feat_len.to(feat.device)
         txt = txt.to(feat.device)
         txt_len = torch.sum(txt!=0,dim=-1)
+        forward_step = global_step - 1
 
         batch_size = len(feat)
-        tf_rate = self.tf_rate(global_step)
+        tf_rate = self.tf_rate(forward_step)
         total_loss = 0
 
         self.timer.cnt('rd')
@@ -109,7 +121,7 @@ class Solver(BaseSolver):
         ''' early stopping ctc'''
         if self.early_stoping:
             stop_step = len(self.tr_set) * STOP_EPOCH // batch_size
-            if global_step > stop_step:
+            if forward_step > stop_step:
                 ctc_output = None
                 self.model.ctc_weight = 0
         #print(ctc_output.shape)
@@ -136,9 +148,12 @@ class Solver(BaseSolver):
 
         self.timer.cnt('fw')
 
+        # step synchronization
+        if self.step != global_step:
+            self.step = global_step
+
         # Logger
-        step = global_step + 1
-        if (step==1) or (step%self.PROGRESS_STEP==0):
+        if (self.step==1) or (self.step%self.PROGRESS_STEP==0):
             if att_output is not None:
                 self.write_log('loss',{'tr_att':att_loss})
                 self.write_log(self.WER,{'tr_att':cal_er(self.tokenizer,att_output,txt)})
@@ -153,13 +168,13 @@ class Solver(BaseSolver):
             #del total_loss
 
         lr = self.optimizer.param_groups[0]['lr']        
-        if step == 1:
+        if self.step == 1:
             print('[INFO]    using lr schedular defined by Daniel, init lr = ', lr)
-        if step >99999 and step%2000==0:
+        if self.step >99999 and self.step%2000==0:
             lr = lr*0.85
             for param_group in self.optimizer.param_groups:
                 param_group['lr'] = lr
-            print('[INFO]     at step:', step)
+            print('[INFO]     at step:', self.step)
             print('[INFO]   lr reduce to', lr)
 
         return total_loss
@@ -179,14 +194,13 @@ class Solver(BaseSolver):
                 batch_size = len(feat)
 
                 self.optimizer.zero_grad()
+                self.step += 1
             
                 # Forward
                 total_loss = self.forward_train(feat, feat_len, txt, self.step)
 
                 # Backprop
                 grad_norm = self.backward(total_loss)             
-
-                self.step+=1
 
                 # Logging
                 if (self.step==1) or (self.step%self.PROGRESS_STEP==0):
@@ -220,7 +234,7 @@ class Solver(BaseSolver):
         self.log.close()
         print('[INFO] Finished training after', human_format(self.max_step), 'steps.')
 
-    def forward_validate(self, feat, feat_len, txt, global_step, batch_num, batch_id, _name):
+    def forward_validate(self, feat, feat_len, txt, batch_num, batch_id, _name):
         feat_len = feat_len.to(feat.device)
         txt = txt.to(feat.device)
         txt_len = torch.sum(txt!=0,dim=-1)
@@ -309,7 +323,7 @@ class Solver(BaseSolver):
             feat = feat.to(self.device)
             batch_size = len(feat)
 
-            self.forward_validate(feat, feat_len, txt, self.step, batch_num, batch_id, _name)
+            self.forward_validate(feat, feat_len, txt, batch_num, batch_id, _name)
 
         self.log_records(_name)
 

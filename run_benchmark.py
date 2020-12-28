@@ -52,6 +52,7 @@ def get_benchmark_args():
 
     # options
     parser.add_argument('--seed', default=1337, type=int)
+    parser.add_argument('--deterministic', action='store_true')
     parser.add_argument('--device', default='cuda', help='model.to(device)')
 
     args = parser.parse_args()
@@ -112,9 +113,14 @@ def main():
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    if torch.cuda.is_available(): torch.cuda.manual_seed_all(args.seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = True
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
+        if args.deterministic:
+            torch.set_deterministic(True)
+            torch.backends.cudnn.enabled = False
+        else:
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
 
     runner = Runner(args, config)
     eval(f'runner.{args.mode}')()
