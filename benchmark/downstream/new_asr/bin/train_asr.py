@@ -220,8 +220,13 @@ class Solver(BaseSolver):
                 lr = self.optimizer.param_groups[0]['lr']        
                 if self.step == 1:
                     print('[INFO]    using lr schedular defined by Daniel, init lr = ', lr)
-                if self.step >99999 and self.step%2000==0:
-                    lr = lr*0.85
+
+                schedule = self.config.get('scheduler', {})
+                num_fast_steps = schedule.get('num_fast_steps', 99999)
+                reduce_every_steps = schedule.get('reduce_every_steps', 2000)
+                reduce_ratio = schedule.get('reduce_ratio', 0.85)
+                if self.step > num_fast_steps and self.step % reduce_every_steps == 0:
+                    lr = lr * reduce_ratio
                     for param_group in self.optimizer.param_groups:
                         param_group['lr'] = lr
                     print('[INFO]     at step:', self.step)

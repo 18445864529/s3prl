@@ -18,9 +18,11 @@ optimizer:
 
 # comment the whole scheduler config block
 # to disable learning rate scheduling
-# scheduler:
-#   name: linear_schedule_with_warmup
-#   num_warmup_steps: 1400
+scheduler:
+  name: asr_schedule
+  num_fast_steps: 49
+  reduce_every_steps: 10
+  reduce_ratio: 0.85
 
 data:
   corpus:                                 # Pass to dataloader
