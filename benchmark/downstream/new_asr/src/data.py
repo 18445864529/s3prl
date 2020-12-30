@@ -104,7 +104,7 @@ def create_textset(tokenizer, train_split, dev_split, name, path, bucketing, bat
     return tr_set, dv_set, tr_loader_bs, batch_size, msg_list
 
 
-def load_dataset(n_jobs, use_gpu, pin_memory, ascending, corpus, audio, text):
+def load_dataset(n_jobs, use_gpu, pin_memory, ascending, corpus, audio, text, for_s3prl=False):
     ''' Prepare dataloader for training/validation'''
     # Audio feature extractor
     '''convert to mel-spectrogram'''
@@ -117,8 +117,8 @@ def load_dataset(n_jobs, use_gpu, pin_memory, ascending, corpus, audio, text):
     tr_set, dv_set, tr_loader_bs, dv_loader_bs, mode, data_msg = create_dataset(tokenizer,ascending,**corpus)
     
     # Collect function
-    collect_tr = partial(collect_audio_batch, audio_transform=audio_transform_tr, mode=mode)
-    collect_dv = partial(collect_audio_batch, audio_transform=audio_transform_dv, mode='test')
+    collect_tr = partial(collect_audio_batch, audio_transform=audio_transform_tr, mode=mode, for_s3prl=for_s3prl)
+    collect_dv = partial(collect_audio_batch, audio_transform=audio_transform_dv, mode='test', for_s3prl=for_s3prl)
     
     # Shuffle/drop applied to training set only
     shuffle = (mode=='train' and not ascending)

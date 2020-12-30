@@ -7,7 +7,7 @@ HALF_BATCHSIZE_AUDIO_LEN = 800 # Batch size will be halfed if the longest wavefi
 # Note: Bucketing may cause random sampling to be biased (less sampled for those length > HALF_BATCHSIZE_AUDIO_LEN )
 HALF_BATCHSIZE_TEXT_LEN = 150
 
-def collect_audio_batch(batch, audio_transform, mode):
+def collect_audio_batch(batch, audio_transform, mode, for_s3prl=False):
     '''Collects a batch, should be list of tuples (audio_path <str>, list of int token <list>) 
        e.g. [(file1,txt1),(file2,txt2),...] '''
     
@@ -41,6 +41,9 @@ def collect_audio_batch(batch, audio_transform, mode):
         for feat_len,f_name,feat,txt in zip(audio_len,file,audio_feat,text)])
     #print(len(audio_feat))
     # Zero-padding
+    if for_s3prl:
+        return audio_feat, text
+
     audio_feat = pad_sequence(audio_feat, batch_first=True)
     text = pad_sequence(text, batch_first=True)
     audio_len = torch.LongTensor(audio_len)

@@ -23,7 +23,7 @@ class DownstreamExpert(nn.Module):
     eg. downstream forward, metric computation, contents to log
     """
 
-    def __init__(self, upstream_dim, expdir, data, hparas, model, **kwargs):
+    def __init__(self, upstream_dim, upstream, expdir, data, hparas, model, **kwargs):
         """
         Args:
             upstream_dim: int
@@ -41,6 +41,7 @@ class DownstreamExpert(nn.Module):
 
         super(DownstreamExpert, self).__init__()
         self.upstream_dim = upstream_dim
+        self.upstream = upstream
 
         config = {
             'data': data,
@@ -50,7 +51,10 @@ class DownstreamExpert(nn.Module):
         paras = self._get_pseudo_args(expdir)
 
         self.solver = Solver(config, paras, mode='train', feat_dim=upstream_dim)
-        self.solver.load_wav()
+        if upstream == 'dummy':
+            self.solver.load_data(for_s3prl=True)
+        else:
+            self.solver.load_wav()
         self.solver.set_model()
 
         self.do_specaug = config['data']['audio']['augment']
@@ -171,15 +175,16 @@ class DownstreamExpert(nn.Module):
                 the loss to be optimized, should not be detached
                 a single scalar in torch.FloatTensor
         """
+        
+        if self.upstream != 'dummy':
+            if self.training and self.do_specaug:
+                features = [self.specaug(feat) for feat in features]
 
-        if self.training and self.do_specaug:
-            features = [self.specaug(feat) for feat in features]
-
-        if HALF_BATCHSIZE_AUDIO_LEN < 3500 and self.training:
-            max_len = [len(feat) for feat in features][0]
-            if max_len > HALF_BATCHSIZE_AUDIO_LEN:
-                features = features[::2]
-                text = text[::2]
+            if HALF_BATCHSIZE_AUDIO_LEN < 3500 and self.training:
+                max_len = [len(feat) for feat in features][0]
+                if max_len > HALF_BATCHSIZE_AUDIO_LEN:
+                    features = features[::2]
+                    text = text[::2]
         
         feat_len = torch.LongTensor([len(feat) for feat in features])
         features = pad_sequence(features, batch_first=True)

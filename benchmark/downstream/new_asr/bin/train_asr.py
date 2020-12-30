@@ -44,11 +44,11 @@ class Solver(BaseSolver):
                 self.best_wer['att'][name] = 3.0
                 self.best_wer['ctc'][name] = 3.0
 
-    def load_data(self):
+    def load_data(self, for_s3prl=False):
         ''' Load data for training/validation, store tokenizer and input/output shape'''
         self.tr_set, self.dv_set, self.feat_dim, self.vocab_size, self.tokenizer, msg = \
                          load_dataset(self.paras.njobs, self.paras.gpu, self.paras.pin_memory, 
-                                      False, **self.config['data'])
+                                      False, for_s3prl=for_s3prl, **self.config['data'])
         self.verbose(msg)
         self._preprocessing()
     
