@@ -246,6 +246,6 @@ def get_asr_schedule(optimizer, num_training_steps, num_fast_steps=49, reduce_ev
         if current_step < num_fast_steps:
             return 1.0
         reduce_num = (current_step - num_fast_steps) // reduce_every_steps + 1
-        return 0.85 ** float(reduce_num)
+        return reduce_ratio ** reduce_num
 
     return LambdaLR(optimizer, lr_lambda, last_epoch)    
