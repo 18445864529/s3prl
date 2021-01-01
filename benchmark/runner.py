@@ -255,14 +255,6 @@ class Runner():
 
 
     def evaluate(self, split='test', global_step=0):
-        # fix seed to guarantee the same evaluation protocol across steps 
-        random.seed(self.args.seed)
-        np.random.seed(self.args.seed)
-        torch.manual_seed(self.args.seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(self.args.seed)
-        torch.cuda.empty_cache()
-
         # record original train/eval states and set all models to eval
         downstream_training = self.downstream.training
         upstream_training = self.upstream.training
