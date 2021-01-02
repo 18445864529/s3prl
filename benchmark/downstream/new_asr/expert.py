@@ -23,7 +23,7 @@ class DownstreamExpert(nn.Module):
     eg. downstream forward, metric computation, contents to log
     """
 
-    def __init__(self, upstream_dim, upstream, expdir, data, hparas, model, **kwargs):
+    def __init__(self, upstream_dim, upstream, expdir, device, data, hparas, model, **kwargs):
         """
         Args:
             upstream_dim: int
@@ -43,12 +43,25 @@ class DownstreamExpert(nn.Module):
         self.upstream_dim = upstream_dim
         self.upstream = upstream
 
+        args_list = [
+            '--deterministic',
+            '--name', f'{os.path.basename(expdir)}',
+            '--njobs', '16',
+            '--seed', '0',
+            '--logdir', f'{os.path.dirname(__file__)}/log/',
+            '--ckpdir', f'{os.path.dirname(__file__)}/ckpt/',
+            '--outdir', f'{os.path.dirname(__file__)}/result/',
+            '--reserve_gpu', '0',
+        ]
+        if device == 'cpu':
+            args_list.append('--cpu')
+
+        paras = self._get_pseudo_args(args_list)
         config = {
             'data': data,
             'hparas': hparas,
             'model': model,
         }
-        paras = self._get_pseudo_args(expdir)
 
         self.solver = Solver(config, paras, mode='train', feat_dim=upstream_dim)
         if upstream == 'dummy':
@@ -61,7 +74,7 @@ class DownstreamExpert(nn.Module):
         self.do_specaug_in_cpu = config.get('do_specaug_in_cpu', True)
         self.specaug = Augment()
 
-    def _get_pseudo_args(self, expdir):
+    def _get_pseudo_args(self, args_list):
         # Arguments
         parser = argparse.ArgumentParser(description='Training E2E asr.')
         parser.add_argument('--config', type=str, help='Path to experiment config.')
@@ -84,16 +97,7 @@ class DownstreamExpert(nn.Module):
         parser.add_argument('--cuda', default=0, type=int, help='Choose which gpu to use.')
         parser.add_argument('--deterministic', action='store_true', help='Ensuring same behavior')
         
-        paras = parser.parse_args([
-            '--deterministic',
-            '--name', f'{os.path.basename(expdir)}',
-            '--njobs', '16',
-            '--seed', '0',
-            '--logdir', f'{os.path.dirname(__file__)}/log/',
-            '--ckpdir', f'{os.path.dirname(__file__)}/ckpt/',
-            '--outdir', f'{os.path.dirname(__file__)}/result/',
-            '--reserve_gpu', '0',
-        ])
+        paras = parser.parse_args(args_list)
         setattr(paras,'gpu',not paras.cpu)
         setattr(paras,'pin_memory',not paras.no_pin)
         setattr(paras,'verbose',not paras.no_msg)
