@@ -95,10 +95,10 @@ def get_benchmark_args():
         copyfile(args.config, f'{args.expdir}/config.yaml')
         
         upstream_dirs = [u for u in os.listdir('upstream/') if re.search(f'^{u}_|^{u}$', args.upstream)]
-        assert len(upstream_dirs) == 1
-        default_upstream_config = f'upstream/{upstream_dirs[0]}/config.yaml'
-        if args.upstream_config == '' and os.path.isfile(default_upstream_config):
-            args.upstream_config = default_upstream_config
+        if len(upstream_dirs) == 1:
+            default_upstream_config = f'upstream/{upstream_dirs[0]}/config.yaml'
+            if args.upstream_config == '' and os.path.isfile(default_upstream_config):
+                args.upstream_config = default_upstream_config
         if os.path.isfile(args.upstream_config):
             copyfile(args.upstream_config, f'{args.expdir}/upstream_config.yaml')
 

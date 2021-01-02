@@ -1,7 +1,7 @@
 import os
 from .expert import UpstreamExpert as _UpstreamExpert
 
-def asr_fbank(config, *args, **kwargs):
+def asr_feat(config, *args, **kwargs):
     """
         The feature dedicated for ASR, only for debugging
             config: PATH

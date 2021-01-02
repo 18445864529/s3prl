@@ -1,13 +1,16 @@
 import os
+import sys
 import math
 import torch
 import random
+asr_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+sys.path.append(asr_dir)
 
 import yaml
 import torch
 import torch.nn as nn
 
-from benchmark.downstream.new_asr.src.audio import create_transform
+from src.audio import create_transform
 
 
 class UpstreamExpert(nn.Module):
