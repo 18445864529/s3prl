@@ -58,6 +58,7 @@ class DownstreamExpert(nn.Module):
         self.solver.set_model()
 
         self.do_specaug = config['data']['audio']['augment']
+        self.do_specaug_in_cpu = config.get('do_specaug_in_cpu', True)
         self.specaug = Augment()
 
     def _get_pseudo_args(self, expdir):
@@ -175,16 +176,20 @@ class DownstreamExpert(nn.Module):
                 the loss to be optimized, should not be detached
                 a single scalar in torch.FloatTensor
         """
+        device = features[0].device
         
         if self.upstream != 'dummy':
-            if self.training and self.do_specaug:
-                features = [self.specaug(feat) for feat in features]
-
             if HALF_BATCHSIZE_AUDIO_LEN < 3500 and self.training:
                 max_len = [len(feat) for feat in features][0]
                 if max_len > HALF_BATCHSIZE_AUDIO_LEN:
                     features = features[::2]
                     text = text[::2]
+
+            if self.training and self.do_specaug:
+                aug_device = device
+                if self.do_specaug_in_cpu:
+                    aug_device = 'cpu'
+                features = [self.specaug.to(aug_device)(feat.to(aug_device)).to(device) for feat in features]
         
         feat_len = torch.LongTensor([len(feat) for feat in features])
         features = pad_sequence(features, batch_first=True)
