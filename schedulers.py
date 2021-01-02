@@ -242,10 +242,16 @@ def get_polynomial_decay_schedule_with_warmup(
 
 
 def get_asr_schedule(optimizer, num_training_steps, num_fast_steps=49, reduce_every_steps=10, reduce_ratio=0.85, last_epoch=-1):
-    def lr_lambda(current_step: int):
-        if current_step < num_fast_steps:
-            return 1.0
-        reduce_num = (current_step - num_fast_steps) // reduce_every_steps + 1
-        return reduce_ratio ** reduce_num
+    class _Scheduler(torch.nn.Module):
+        def __init__(self):
+            super(_Scheduler, self).__init__()
+            self.register_buffer('current_step', torch.ones(1))
+        
+        def step(self):
+            if self.current_step > num_fast_steps and self.current_step % reduce_every_steps == 0:
+                lr = optimizer.param_groups[0]['lr'] * reduce_ratio
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] = lr
+            self.current_step += 1
 
-    return LambdaLR(optimizer, lr_lambda, last_epoch)    
+    return _Scheduler()
